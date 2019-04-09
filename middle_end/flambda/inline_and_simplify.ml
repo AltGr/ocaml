@@ -1077,6 +1077,11 @@ and simplify_named env r (tree : Flambda.named) : Flambda.named * R.t =
       | (Psequand | Psequor), _, _ ->
         Misc.fatal_error "Psequand and Psequor must be expanded (see handling \
             in closure_conversion.ml)"
+      | Clambda_primitives.Pmakeblock (tag, false, _), args, args_approxs
+        when E.find_constructed_block env ~size:(List.length args) ~tag args
+             <> None ->
+        let Some var = E.find_constructed_block env ~size:(List.length args) ~tag args in
+        Var var, B.remove_code_named tree
       | p, args, args_approxs ->
         let expr, approx, benefit =
           let module Backend = (val (E.backend env) : Backend_intf.S) in
@@ -1288,12 +1293,17 @@ and simplify env r (tree : Flambda.t) : Flambda.t * R.t =
           (fun c k -> A.potentially_taken_block_switch_branch c k.Flambda.tag)
           sw.blocks []
       in
+      let simplify_block_branch env r (key, lam) =
+        let env = E.add_constructed_block env ~size:key.Flambda.size ~tag:key.Flambda.tag arg in
+        let lam, r = simplify env r lam in
+        lam, r
+      in
       begin match filtered_consts, filtered_blocks with
       | Must_be_taken _, Must_be_taken _ ->
         assert false
       | Must_be_taken branch, _
       | _, Must_be_taken branch ->
-        let lam, r = simplify env r branch in
+        let lam, r = simplify_block_branch env r branch in
         lam, R.map_benefit r B.remove_branch
       | Can_be_taken consts, Can_be_taken blocks ->
         match consts, blocks, sw.failaction with
@@ -1314,7 +1324,7 @@ and simplify env r (tree : Flambda.t) : Flambda.t * R.t =
         | [_, branch], [], None
         | [], [_, branch], None
         | [], [], Some branch ->
-          let lam, r = simplify env r branch in
+          let lam, r = simplify_block_branch env r branch in
           lam, R.map_benefit r B.remove_branch
         | _ ->
           let env = E.inside_branch env in
@@ -1323,7 +1333,7 @@ and simplify env r (tree : Flambda.t) : Flambda.t * R.t =
             (('k * Flambda.t) list * R.t) =
             fun (i, v) (acc, r) ->
             let approx = R.approx r in
-            let lam, r = simplify env r v in
+            let lam, r = simplify_block_branch env r v in
             (i, lam)::acc,
             R.meet_approx r env approx
           in
@@ -1335,7 +1345,7 @@ and simplify env r (tree : Flambda.t) : Flambda.t * R.t =
             | None -> None, r
             | Some l ->
               let approx = R.approx r in
-              let l, r = simplify env r l in
+              let l, r = simplify_block_branch env r l in
               Some l,
               R.meet_approx r env approx
           in

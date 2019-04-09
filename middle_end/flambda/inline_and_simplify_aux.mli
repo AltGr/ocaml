@@ -264,6 +264,14 @@ module Env : sig
 
   (** Appends the locations of inlined call-sites to the [~dbg] argument *)
   val add_inlined_debuginfo : t -> dbg:Debuginfo.t -> Debuginfo.t
+
+
+  val add_constructed_block :
+    t -> size:int -> tag:int -> Flambda.t -> Variable.t -> t
+
+  val find_constructed_block :
+    t -> size:int -> tag:int -> Flambda.t -> Variable.t option
+
 end
 
 module Result : sig

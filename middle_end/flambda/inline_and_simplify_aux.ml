@@ -44,6 +44,9 @@ module Env = struct
     closure_depth : int;
     inlining_stats_closure_stack : Inlining_stats.Closure_stack.t;
     inlined_debuginfo : Debuginfo.t;
+    constructed_blocks : ((int * int * Variable.t list) * Variable.t) list;
+    (* immutable blocks that we shouldn't need to allocate again *)
+    (* TODO LG: associative list really ? *)
   }
 
   let create ~never_inline ~backend ~round ~ppf_dump =
@@ -68,6 +71,7 @@ module Env = struct
       inlining_stats_closure_stack =
         Inlining_stats.Closure_stack.create ();
       inlined_debuginfo = Debuginfo.none;
+      constructed_blocks = [];
     }
 
   let backend t = t.backend
@@ -408,6 +412,16 @@ module Env = struct
 
   let add_inlined_debuginfo t ~dbg =
     Debuginfo.concat t.inlined_debuginfo dbg
+
+  let add_constructed_block t ~size ~tag elts var =
+    { t with
+      constructed_blocks =
+        ((size, tag, elts), var) :: t.constructed_blocks;
+    }
+
+  let find_constructed_block t ~size ~tag elts =
+    List.assoc_opt (size, tag, elts) t.constructed_blocks
+
 end
 
 let initial_inlining_threshold ~round : Inlining_cost.Threshold.t =
