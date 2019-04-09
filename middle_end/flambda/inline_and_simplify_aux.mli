@@ -267,10 +267,10 @@ module Env : sig
 
 
   val add_constructed_block :
-    t -> size:int -> tag:int -> Flambda.t -> Variable.t -> t
+    t -> size:int -> tag:int -> Variable.t -> t
 
   val find_constructed_block :
-    t -> size:int -> tag:int -> Flambda.t -> Variable.t option
+    t -> size:int -> tag:int -> Variable.t option
 
 end
 

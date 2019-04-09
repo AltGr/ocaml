@@ -44,7 +44,7 @@ module Env = struct
     closure_depth : int;
     inlining_stats_closure_stack : Inlining_stats.Closure_stack.t;
     inlined_debuginfo : Debuginfo.t;
-    constructed_blocks : ((int * int * Variable.t list) * Variable.t) list;
+    constructed_blocks : ((int * int) * Variable.t) list;
     (* immutable blocks that we shouldn't need to allocate again *)
     (* TODO LG: associative list really ? *)
   }
@@ -413,14 +413,14 @@ module Env = struct
   let add_inlined_debuginfo t ~dbg =
     Debuginfo.concat t.inlined_debuginfo dbg
 
-  let add_constructed_block t ~size ~tag elts var =
+  let add_constructed_block t ~size ~tag var =
     { t with
       constructed_blocks =
-        ((size, tag, elts), var) :: t.constructed_blocks;
+        ((size, tag), var) :: t.constructed_blocks;
     }
 
-  let find_constructed_block t ~size ~tag elts =
-    List.assoc_opt (size, tag, elts) t.constructed_blocks
+  let find_constructed_block t ~size ~tag =
+    List.assoc_opt (size, tag) t.constructed_blocks
 
 end
 

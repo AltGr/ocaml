@@ -1003,6 +1003,20 @@ and simplify_named env r (tree : Flambda.named) : Flambda.named * R.t =
     let dbg = E.add_inlined_debuginfo env ~dbg in
     simplify_free_variables_named env args ~f:(fun env args args_approxs ->
       let tree = Flambda.Prim (prim, args, dbg) in
+      let default p args args_approxs =
+        let expr, approx, benefit =
+          let module Backend = (val (E.backend env) : Backend_intf.S) in
+          Simplify_primitives.primitive p (args, args_approxs) tree dbg
+            ~size_int:Backend.size_int
+        in
+        let r = R.map_benefit r (B.(+) benefit) in
+        let approx =
+          match p with
+          | Clambda_primitives.Popaque -> A.value_unknown Other
+          | _ -> approx
+        in
+        expr, ret r approx
+      in
       begin match prim, args, args_approxs with
       (* CR-someday mshinwell: Optimise [Pfield_computed]. *)
       | Pfield field_index, [arg], [arg_approx] ->
@@ -1077,24 +1091,29 @@ and simplify_named env r (tree : Flambda.named) : Flambda.named * R.t =
       | (Psequand | Psequor), _, _ ->
         Misc.fatal_error "Psequand and Psequor must be expanded (see handling \
             in closure_conversion.ml)"
-      | Clambda_primitives.Pmakeblock (tag, false, _), args, args_approxs
-        when E.find_constructed_block env ~size:(List.length args) ~tag args
-             <> None ->
-        let Some var = E.find_constructed_block env ~size:(List.length args) ~tag args in
-        Var var, B.remove_code_named tree
+      | Pmakeblock (tag, Immutable, _), args, args_approxs ->
+        begin
+          match E.find_constructed_block env ~size:(List.length args) ~tag with
+          | Some constructed_var ->
+              let rec fields_match i = function
+                | [] -> true
+                | var :: args ->
+                    match R.
+
+                    (Variable.equal constructed_var var ||
+                     match (E.find_exn env var).var with
+                     | None -> false
+                     | Some var -> Variable.equal constructed_var var)
+                    && fields_match (i + 1) args
+                | _ -> false
+              in
+              if fields_match 0 args then
+                Var constructed_var, B.remove_code_named tree
+              else default p args args_approxs
+          | _ -> default p args args_approxs
+        end
       | p, args, args_approxs ->
-        let expr, approx, benefit =
-          let module Backend = (val (E.backend env) : Backend_intf.S) in
-          Simplify_primitives.primitive p (args, args_approxs) tree dbg
-            ~size_int:Backend.size_int
-        in
-        let r = R.map_benefit r (B.(+) benefit) in
-        let approx =
-          match p with
-          | Popaque -> A.value_unknown Other
-          | _ -> approx
-        in
-        expr, ret r approx
+        default p args args_approxs
       end)
   | Expr expr ->
     let expr, r = simplify env r expr in
@@ -1294,7 +1313,11 @@ and simplify env r (tree : Flambda.t) : Flambda.t * R.t =
           sw.blocks []
       in
       let simplify_block_branch env r (key, lam) =
-        let env = E.add_constructed_block env ~size:key.Flambda.size ~tag:key.Flambda.tag arg in
+        let arg = match arg_approx.var with Some v -> v | None -> arg in
+        let env =
+          E.add_constructed_block env
+            ~size:key.Flambda.size ~tag:key.Flambda.tag arg
+        in
         let lam, r = simplify env r lam in
         lam, r
       in
