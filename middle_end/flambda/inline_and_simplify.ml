@@ -1307,9 +1307,9 @@ and simplify env r (tree : Flambda.t) : Flambda.t * R.t =
           sw.blocks []
       in
       let simplify_block_branch env r (key, lam) =
-        let env =
-          E.add_constructed_block env
-            ~size:key.Flambda.size ~tag:key.Flambda.tag arg
+        let env = match key.Flambda.mutability with
+          | Immutable -> E.add_constructed_block env key arg
+          | Mutable -> env
         in
         let lam, r = simplify env r lam in
         lam, r

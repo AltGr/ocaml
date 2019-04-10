@@ -421,16 +421,20 @@ module Env = struct
   let add_inlined_debuginfo t ~dbg =
     Debuginfo.concat t.inlined_debuginfo dbg
 
-  let add_constructed_block t ~size ~tag var =
+  let add_constructed_block t key var =
+    assert (match key.Flambda.mutability with Immutable -> true | _ -> false);
     { t with constructed_blocks =
-               Constructed_block_map.update { size; tag }
+               Constructed_block_map.update key
                  (function Some vs -> Some (var :: vs) | None -> Some [var])
                  t.constructed_blocks;
     }
 
   let find_constructed_block t ~tag args =
     let size = List.length args in
-    match Constructed_block_map.find_opt { size; tag } t.constructed_blocks with
+    match
+      Constructed_block_map.find_opt { size; tag; mutability = Immutable }
+        t.constructed_blocks
+    with
     | None -> None
     | Some blocks ->
       let rec fields_match i args constructed_var =
