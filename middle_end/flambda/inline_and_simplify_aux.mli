@@ -265,12 +265,15 @@ module Env : sig
   (** Appends the locations of inlined call-sites to the [~dbg] argument *)
   val add_inlined_debuginfo : t -> dbg:Debuginfo.t -> Debuginfo.t
 
-
+  (** Adds a variable as a known immutable constructed block with the given size
+      and tag, implying that it can be reused. *)
   val add_constructed_block :
     t -> size:int -> tag:int -> Variable.t -> t
 
+  (** Finds a variable pointing to an already constructed immutable block having
+      the given tag and arguments *)
   val find_constructed_block :
-    t -> size:int -> tag:int -> Variable.t option
+    t -> tag:int -> Variable.t list -> Variable.t option
 
 end
 
@@ -296,6 +299,13 @@ module Result : sig
       used just before returning from a branch case of the
       simplification algorithm. *)
   val meet_approx : t -> Env.t -> Simple_value_approx.t -> t
+
+  (** Note that [t] is the result of the given [projection]. *)
+  val set_projection : t -> Projection.t -> t
+
+  (** Determine if [t] has been recorded as the result of a projection and
+      record it *)
+  val projection : t -> Projection.t option
 
   (** All static exceptions for which [use_staticfail] has been called on
       the given result structure. *)

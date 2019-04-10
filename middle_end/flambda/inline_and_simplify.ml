@@ -191,7 +191,7 @@ let approx_for_allocated_const (const : Allocated_const.t) =
         (Array.map A.value_float (Array.of_list a))
 
 type 'key filtered_switch_branches =
-  | Must_be_taken of Flambda.t
+  | Must_be_taken of ('key * Flambda.t)
   | Can_be_taken of ('key * Flambda.t) list
 
 let rec filter_branches arg_approx filter branches compatible_branches =
@@ -205,7 +205,7 @@ let rec filter_branches arg_approx filter branches compatible_branches =
           filter_branches arg_approx filter branches
             (branch :: compatible_branches)
       | A.Must_be_taken ->
-          Must_be_taken lam
+          Must_be_taken (c, lam)
 
 (* Determine whether a given closure ID corresponds directly to a variable
    (bound to a closure) in the given environment.  This happens when the body
@@ -1045,7 +1045,10 @@ and simplify_named env r (tree : Flambda.named) : Flambda.named * R.t =
                 let approx' = E.really_import_approx env approx in
                 tree, approx'
             in
-            simplify_named_using_approx_and_env env r tree approx
+            let lam, r =
+              simplify_named_using_approx_and_env env r tree approx
+            in
+            lam, R.set_projection r projection
           end
         end
       | Pfield _, _, _ -> Misc.fatal_error "Pfield arity error"
@@ -1091,26 +1094,13 @@ and simplify_named env r (tree : Flambda.named) : Flambda.named * R.t =
       | (Psequand | Psequor), _, _ ->
         Misc.fatal_error "Psequand and Psequor must be expanded (see handling \
             in closure_conversion.ml)"
-      | Pmakeblock (tag, Immutable, _), args, args_approxs ->
-        begin
-          match E.find_constructed_block env ~size:(List.length args) ~tag with
-          | Some constructed_var ->
-              let rec fields_match i = function
-                | [] -> true
-                | var :: args ->
-                    match R.
-
-                    (Variable.equal constructed_var var ||
-                     match (E.find_exn env var).var with
-                     | None -> false
-                     | Some var -> Variable.equal constructed_var var)
-                    && fields_match (i + 1) args
-                | _ -> false
-              in
-              if fields_match 0 args then
-                Var constructed_var, B.remove_code_named tree
-              else default p args args_approxs
-          | _ -> default p args args_approxs
+      | Pmakeblock (tag, Immutable, _) as p, args, args_approxs ->
+        begin match E.find_constructed_block env ~tag args with
+        | Some constructed_var ->
+            Format.eprintf "[31mACTIVATED[m@.";
+            Expr (Var constructed_var),
+            R.map_benefit r (B.remove_code_named tree)
+        | _ -> default p args args_approxs
         end
       | p, args, args_approxs ->
         default p args args_approxs
@@ -1137,6 +1127,10 @@ and simplify env r (tree : Flambda.t) : Flambda.t * R.t =
       let var, sb = Freshening.add_variable (E.freshening env) var in
       let env = E.set_freshening env sb in
       let env = E.add env var (R.approx r) in
+      let env = match R.projection r with
+        | Some p -> E.add_projection env ~projection:p ~bound_to:var
+        | None -> env
+      in
       (env, r), var, defining_expr
     in
     let for_last_body (env, r) body =
@@ -1313,7 +1307,6 @@ and simplify env r (tree : Flambda.t) : Flambda.t * R.t =
           sw.blocks []
       in
       let simplify_block_branch env r (key, lam) =
-        let arg = match arg_approx.var with Some v -> v | None -> arg in
         let env =
           E.add_constructed_block env
             ~size:key.Flambda.size ~tag:key.Flambda.tag arg
@@ -1324,7 +1317,9 @@ and simplify env r (tree : Flambda.t) : Flambda.t * R.t =
       begin match filtered_consts, filtered_blocks with
       | Must_be_taken _, Must_be_taken _ ->
         assert false
-      | Must_be_taken branch, _
+      | Must_be_taken (_, branch), _ ->
+        let lam, r = simplify env r branch in
+        lam, R.map_benefit r B.remove_branch
       | _, Must_be_taken branch ->
         let lam, r = simplify_block_branch env r branch in
         lam, R.map_benefit r B.remove_branch
@@ -1347,28 +1342,33 @@ and simplify env r (tree : Flambda.t) : Flambda.t * R.t =
         | [_, branch], [], None
         | [], [_, branch], None
         | [], [], Some branch ->
-          let lam, r = simplify_block_branch env r branch in
+          let lam, r = simplify env r branch in
           lam, R.map_benefit r B.remove_branch
         | _ ->
           let env = E.inside_branch env in
-          let f:
-            'k. ('k * Flambda.t) -> (('k * Flambda.t) list * R.t) ->
-            (('k * Flambda.t) list * R.t) =
-            fun (i, v) (acc, r) ->
-            let approx = R.approx r in
-            let lam, r = simplify_block_branch env r v in
-            (i, lam)::acc,
-            R.meet_approx r env approx
-          in
           let r = R.set_approx r A.value_bottom in
-          let consts, r = List.fold_right f consts ([], r) in
-          let blocks, r = List.fold_right f blocks ([], r) in
+          let consts, r =
+            List.fold_right (fun (i, v) (acc, r) ->
+                let approx = R.approx r in
+                let lam, r = simplify env r v in
+                (i, lam)::acc,
+                R.meet_approx r env approx)
+              consts ([], r)
+          in
+          let blocks, r =
+            List.fold_right (fun (i, v) (acc, r) ->
+                let approx = R.approx r in
+                let lam, r = simplify_block_branch env r (i, v) in
+                (i, lam)::acc,
+                R.meet_approx r env approx)
+              blocks ([], r)
+          in
           let failaction, r =
             match sw.failaction with
             | None -> None, r
             | Some l ->
               let approx = R.approx r in
-              let l, r = simplify_block_branch env r l in
+              let l, r = simplify env r l in
               Some l,
               R.meet_approx r env approx
           in

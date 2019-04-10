@@ -20,6 +20,14 @@ open! Int_replace_polymorphic_compare
 module Env = struct
   type scope = Current | Outer
 
+  module Constructed_block_map = Map.Make (struct
+      type t = Flambda.switch_block_key
+      let compare a b =
+        match compare a.Flambda.tag b.Flambda.tag with
+        | 0 -> compare a.Flambda.size b.Flambda.size
+        | n -> n
+    end)
+
   type t = {
     backend : (module Backend_intf.S);
     round : int;
@@ -44,7 +52,7 @@ module Env = struct
     closure_depth : int;
     inlining_stats_closure_stack : Inlining_stats.Closure_stack.t;
     inlined_debuginfo : Debuginfo.t;
-    constructed_blocks : ((int * int) * Variable.t) list;
+    constructed_blocks : Variable.t list Constructed_block_map.t;
     (* immutable blocks that we shouldn't need to allocate again *)
     (* TODO LG: associative list really ? *)
   }
@@ -71,7 +79,7 @@ module Env = struct
       inlining_stats_closure_stack =
         Inlining_stats.Closure_stack.create ();
       inlined_debuginfo = Debuginfo.none;
-      constructed_blocks = [];
+      constructed_blocks = Constructed_block_map.empty;
     }
 
   let backend t = t.backend
@@ -414,13 +422,29 @@ module Env = struct
     Debuginfo.concat t.inlined_debuginfo dbg
 
   let add_constructed_block t ~size ~tag var =
-    { t with
-      constructed_blocks =
-        ((size, tag), var) :: t.constructed_blocks;
+    { t with constructed_blocks =
+               Constructed_block_map.update { size; tag }
+                 (function Some vs -> Some (var :: vs) | None -> Some [var])
+                 t.constructed_blocks;
     }
 
-  let find_constructed_block t ~size ~tag =
-    List.assoc_opt (size, tag) t.constructed_blocks
+  let find_constructed_block t ~tag args =
+    let size = List.length args in
+    match Constructed_block_map.find_opt { size; tag } t.constructed_blocks with
+    | None -> None
+    | Some blocks ->
+      let rec fields_match i args constructed_var =
+        match args with
+        | [] -> true
+        | var :: args ->
+          let projection = Projection.Field (i, constructed_var) in
+          match find_projection t ~projection with
+          | Some v ->
+              Variable.equal v var && fields_match (i + 1) args constructed_var
+          (* FIXME LG: compare the approxs ?*)
+          | _ -> false
+      in
+      List.find_opt (fields_match 0 args) blocks
 
 end
 
@@ -452,6 +476,7 @@ let initial_inlining_toplevel_threshold ~round : Inlining_cost.Threshold.t =
 module Result = struct
   type t =
     { approx : Simple_value_approx.t;
+      projection : Projection.t option;
       used_static_exceptions : Static_exception.Set.t;
       inlining_threshold : Inlining_cost.Threshold.t option;
       benefit : Inlining_cost.Benefit.t;
@@ -460,6 +485,7 @@ module Result = struct
 
   let create () =
     { approx = Simple_value_approx.value_unknown Other;
+      projection = None;
       used_static_exceptions = Static_exception.Set.empty;
       inlining_threshold = None;
       benefit = Inlining_cost.Benefit.zero;
@@ -475,6 +501,11 @@ module Result = struct
       Simple_value_approx.meet ~really_import_approx t.approx approx
     in
     set_approx t meet
+
+  let set_projection t projection =
+    { t with projection = Some projection }
+
+  let projection t = t.projection
 
   let use_static_exception t i =
     { t with
