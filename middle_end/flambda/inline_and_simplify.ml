@@ -1045,10 +1045,8 @@ and simplify_named env r (tree : Flambda.named) : Flambda.named * R.t =
                 let approx' = E.really_import_approx env approx in
                 tree, approx'
             in
-            let lam, r =
-              simplify_named_using_approx_and_env env r tree approx
-            in
-            lam, R.set_projection r projection
+            let approx = A.augment_with_projection approx projection in
+            simplify_named_using_approx_and_env env r tree approx
           end
         end
       | Pfield _, _, _ -> Misc.fatal_error "Pfield arity error"
@@ -1126,8 +1124,9 @@ and simplify env r (tree : Flambda.t) : Flambda.t * R.t =
       let defining_expr, r = simplify_named env r defining_expr in
       let var, sb = Freshening.add_variable (E.freshening env) var in
       let env = E.set_freshening env sb in
-      let env = E.add env var (R.approx r) in
-      let env = match R.projection r with
+      let approx = R.approx r in
+      let env = E.add env var approx in
+      let env = match approx.projection with
         | Some p -> E.add_projection env ~projection:p ~bound_to:var
         | None -> env
       in

@@ -480,7 +480,6 @@ let initial_inlining_toplevel_threshold ~round : Inlining_cost.Threshold.t =
 module Result = struct
   type t =
     { approx : Simple_value_approx.t;
-      projection : Projection.t option;
       used_static_exceptions : Static_exception.Set.t;
       inlining_threshold : Inlining_cost.Threshold.t option;
       benefit : Inlining_cost.Benefit.t;
@@ -489,7 +488,6 @@ module Result = struct
 
   let create () =
     { approx = Simple_value_approx.value_unknown Other;
-      projection = None;
       used_static_exceptions = Static_exception.Set.empty;
       inlining_threshold = None;
       benefit = Inlining_cost.Benefit.zero;
@@ -497,7 +495,7 @@ module Result = struct
     }
 
   let approx t = t.approx
-  let set_approx t approx = { t with approx; projection = None; }
+  let set_approx t approx = { t with approx }
 
   let meet_approx t env approx =
     let really_import_approx = Env.really_import_approx env in
@@ -505,11 +503,6 @@ module Result = struct
       Simple_value_approx.meet ~really_import_approx t.approx approx
     in
     set_approx t meet
-
-  let set_projection t projection =
-    { t with projection = Some projection }
-
-  let projection t = t.projection
 
   let use_static_exception t i =
     { t with
