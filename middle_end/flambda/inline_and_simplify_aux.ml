@@ -497,7 +497,7 @@ module Result = struct
     }
 
   let approx t = t.approx
-  let set_approx t approx = { t with approx }
+  let set_approx t approx = { t with approx; projection = None; }
 
   let meet_approx t env approx =
     let really_import_approx = Env.really_import_approx env in
