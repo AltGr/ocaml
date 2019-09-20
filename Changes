@@ -92,6 +92,10 @@ Working version
 - #8919: lift mutable lets along with immutable ones
   (Leo White, review by Pierre Chambart)
 
+- #8956: Add a dissect_letrec pass in lambda that rewrites recursive value
+  definitions into initialisation and assignment.
+  (Pierre Chambart and Louis Gesbert)
+
 ### Runtime system:
 
 - #8619: Ensure Gc.minor_words remains accurate after a GC.
